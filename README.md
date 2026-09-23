@@ -8,6 +8,8 @@ The page is only the desktop. It loads noVNC's RFB client and does not ship the 
 
 Rebuild the codespace so `.devcontainer` is applied. On each start, `start-desktop.sh` launches Xvfb, XFCE, x11vnc, and websockify. Open the forwarded **6080** URL. The port is private, so GitHub sign-in is what keeps it closed.
 
+The browser URL is HTTPS because GitHub’s proxy terminates TLS. Inside the container the server is HTTP. The port’s protocol in the Ports panel must stay HTTP. Setting it to HTTPS makes the proxy speak TLS to websockify, and the browser shows HTTP 502.
+
 Keyboard and mouse go to the session. The framebuffer is `VNC_RESOLUTION` (default `1600x900x24`) and the browser scales it to the window. `?scale=false` shows it 1:1.
 
 ## What is installed
