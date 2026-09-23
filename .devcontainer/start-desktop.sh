@@ -28,11 +28,13 @@ pid_alive() {
   [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null
 }
 
-# Child processes stay quiet unless DESKTOP_DEBUG=1. GTK theme notes and
-# VNC banners would otherwise fill the log on every start.
-spawn_quiet() {
-  if [[ "${DESKTOP_DEBUG:-}" == "1" ]]; then
-    "$@" &
+# XFCE is quiet unless DESKTOP_DEBUG=1. The web and VNC processes always
+# append to the desktop log so a dead port is visible.
+spawn_bg() {
+  local mode="$1"
+  shift
+  if [[ "$mode" == "log" || "${DESKTOP_DEBUG:-}" == "1" ]]; then
+    "$@" >>"$LOG" 2>&1 &
   else
     "$@" >/dev/null 2>&1 &
   fi
@@ -40,12 +42,17 @@ spawn_quiet() {
 }
 
 start_if_needed() {
-  local pidfile="$1"
-  shift
+  local mode="$1"
+  local pidfile="$2"
+  shift 2
   if pid_alive "$pidfile"; then
     return 0
   fi
-  spawn_quiet "$@" > "$pidfile"
+  spawn_bg "$mode" "$@" > "$pidfile"
+}
+
+port_open() {
+  timeout 0.3 bash -c "echo >/dev/tcp/127.0.0.1/${WEB_PORT}" >/dev/null 2>&1
 }
 
 set_prop() {
@@ -114,7 +121,7 @@ ensure_xvfb() {
   if pid_alive "$PID_DIR/xvfb.pid"; then
     return 0
   fi
-  spawn_quiet Xvfb "$DISPLAY" -screen 0 "$RESOLUTION" -nolisten tcp -ac +extension GLX +render -noreset > "$PID_DIR/xvfb.pid"
+  spawn_bg quiet Xvfb "$DISPLAY" -screen 0 "$RESOLUTION" -nolisten tcp -ac +render -noreset > "$PID_DIR/xvfb.pid"
 }
 
 wait_for_x() {
@@ -134,7 +141,7 @@ ensure_dbus() {
     return 0
   fi
   rm -f "${XDG_RUNTIME_DIR}/bus"
-  spawn_quiet dbus-daemon --session --address="$DBUS_SESSION_BUS_ADDRESS" --nofork --nopidfile > "$PID_DIR/dbus.pid"
+  spawn_bg quiet dbus-daemon --session --address="$DBUS_SESSION_BUS_ADDRESS" --nofork --nopidfile > "$PID_DIR/dbus.pid"
   local _
   for _ in $(seq 1 50); do
     [[ -S "${XDG_RUNTIME_DIR}/bus" ]] && return 0
@@ -147,7 +154,7 @@ ensure_xfce() {
   if pid_alive "$PID_DIR/xfce.pid"; then
     return 0
   fi
-  spawn_quiet startxfce4 > "$PID_DIR/xfce.pid"
+  spawn_bg quiet startxfce4 > "$PID_DIR/xfce.pid"
 }
 
 ensure_vnc() {
@@ -158,11 +165,13 @@ ensure_vnc() {
   else
     args+=(-nopw)
   fi
-  start_if_needed "$PID_DIR/x11vnc.pid" "${args[@]}"
+  start_if_needed log "$PID_DIR/x11vnc.pid" "${args[@]}"
 }
 
 ensure_websockify() {
-  start_if_needed "$PID_DIR/websockify.pid" \
+  # Bind every IPv4 interface. The Codespaces proxy connects to the
+  # container address, and this server speaks HTTP. TLS stops at the proxy.
+  start_if_needed log "$PID_DIR/websockify.pid" \
     websockify --web "$WEB_ROOT" "0.0.0.0:${WEB_PORT}" "127.0.0.1:${VNC_PORT}"
 }
 
@@ -228,8 +237,10 @@ supervise() {
   local look_tries=0
   write_auth
   seed_config
+  ensure_websockify || true
   while true; do
     ensure_xvfb || true
+    ensure_websockify || true
     if wait_for_x; then
       xset s off -dpms s noblank >/dev/null 2>&1 || true
       ensure_dbus || true
@@ -266,6 +277,14 @@ case "$cmd" in
     : > "$LOG"
     setsid "$0" supervise >>"$LOG" 2>&1 </dev/null &
     echo $! > "$PID_DIR/supervisor.pid"
+    for _ in $(seq 1 40); do
+      if port_open; then
+        echo "Desktop ready: http://127.0.0.1:${WEB_PORT}"
+        exit 0
+      fi
+      sleep 0.25
+    done
+    echo "Desktop did not open port ${WEB_PORT}. See ${LOG}" >&2
     ;;
   *)
     log "usage: $0 [start|supervise|apply-look]"
