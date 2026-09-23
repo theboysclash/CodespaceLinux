@@ -8,12 +8,13 @@
   // postStart runs on every codespace start. postCreate runs only once,
   // so a desktop started there would not come back after a stop.
   "postStartCommand": "bash /opt/linuxlite-desktop/start-desktop.sh",
+  "postAttachCommand": "bash /opt/linuxlite-desktop/start-desktop.sh",
   "forwardPorts": [6080],
   "portsAttributes": {
     "6080": {
       "label": "Linux Lite desktop",
       "onAutoForward": "openBrowser",
-      "protocol": "https",
+      "protocol": "http",
       "visibility": "private"
     }
   },
