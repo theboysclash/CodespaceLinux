@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Linux Lite look
+Exec=bash /opt/linuxlite-desktop/start-desktop.sh apply-look
+OnlyShowIn=XFCE;
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
