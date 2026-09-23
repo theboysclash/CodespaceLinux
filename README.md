@@ -20,4 +20,6 @@ Keyboard and mouse go to the session. The framebuffer is `VNC_RESOLUTION` (defau
 
 Set `VNC_PASSWORD` in `containerEnv` (8 characters; VNC ignores the rest). The startup script writes it into `vnc-auth.js` so the page still connects with no login prompt. `?password=` overrides that value. A public port is reachable by anyone who has the URL.
 
+Startup messages go to `/tmp/linuxlite-desktop.log`. Set `DESKTOP_DEBUG=1` to keep XFCE and VNC output in that log.
+
 To keep a home directory across rebuilds, add a mount for `/home/vscode` in `devcontainer.json`.

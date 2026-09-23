@@ -28,14 +28,24 @@ pid_alive() {
   [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null
 }
 
+# Child processes stay quiet unless DESKTOP_DEBUG=1. GTK theme notes and
+# VNC banners would otherwise fill the log on every start.
+spawn_quiet() {
+  if [[ "${DESKTOP_DEBUG:-}" == "1" ]]; then
+    "$@" &
+  else
+    "$@" >/dev/null 2>&1 &
+  fi
+  echo $!
+}
+
 start_if_needed() {
   local pidfile="$1"
   shift
   if pid_alive "$pidfile"; then
     return 0
   fi
-  "$@" &
-  echo $! > "$pidfile"
+  spawn_quiet "$@" > "$pidfile"
 }
 
 set_prop() {
@@ -104,8 +114,7 @@ ensure_xvfb() {
   if pid_alive "$PID_DIR/xvfb.pid"; then
     return 0
   fi
-  Xvfb "$DISPLAY" -screen 0 "$RESOLUTION" -nolisten tcp -ac +extension GLX +render -noreset &
-  echo $! > "$PID_DIR/xvfb.pid"
+  spawn_quiet Xvfb "$DISPLAY" -screen 0 "$RESOLUTION" -nolisten tcp -ac +extension GLX +render -noreset > "$PID_DIR/xvfb.pid"
 }
 
 wait_for_x() {
@@ -125,8 +134,7 @@ ensure_dbus() {
     return 0
   fi
   rm -f "${XDG_RUNTIME_DIR}/bus"
-  dbus-daemon --session --address="$DBUS_SESSION_BUS_ADDRESS" --nofork --nopidfile &
-  echo $! > "$PID_DIR/dbus.pid"
+  spawn_quiet dbus-daemon --session --address="$DBUS_SESSION_BUS_ADDRESS" --nofork --nopidfile > "$PID_DIR/dbus.pid"
   local _
   for _ in $(seq 1 50); do
     [[ -S "${XDG_RUNTIME_DIR}/bus" ]] && return 0
@@ -139,8 +147,7 @@ ensure_xfce() {
   if pid_alive "$PID_DIR/xfce.pid"; then
     return 0
   fi
-  startxfce4 &
-  echo $! > "$PID_DIR/xfce.pid"
+  spawn_quiet startxfce4 > "$PID_DIR/xfce.pid"
 }
 
 ensure_vnc() {
