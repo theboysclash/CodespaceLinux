@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Linux Lite</title>
+  <style>
+    html, body, #screen {
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: #1b2836;
+      user-select: none;
+    }
+    #screen {
+      position: fixed;
+      inset: 0;
+    }
+    /* noVNC's control bar is not created. If a later change injects it, remove it. */
+    #noVNC_control_bar,
+    #noVNC_control_bar_anchor,
+    #noVNC_control_bar_handle,
+    #noVNC_status,
+    #top_bar,
+    #sendCtrlAltDelButton {
+      display: none !important;
+    }
+  </style>
+  <script src="./vnc-auth.js"></script>
+</head>
+<body>
+  <div id="screen" tabindex="0"></div>
+  <script type="module">
+    import RFB from './novnc/core/rfb.js';
+
+    const screen = document.getElementById('screen');
+    const params = new URLSearchParams(window.location.search);
+    const blockedIds = [
+      'noVNC_control_bar',
+      'noVNC_control_bar_anchor',
+      'noVNC_control_bar_handle',
+      'noVNC_status',
+      'top_bar',
+      'sendCtrlAltDelButton',
+    ];
+
+    function query(name, fallback) {
+      const value = params.get(name);
+      return value == null || value === '' ? fallback : value;
+    }
+
+    function password() {
+      return query('password', window.__VNC_PASSWORD__ || '');
+    }
+
+    function socketUrl() {
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = query('host', window.location.hostname);
+      const port = query('port', window.location.port);
+      const path = query('path', 'websockify').replace(/^\/+/, '');
+      return proto + '//' + host + (port ? ':' + port : '') + '/' + path;
+    }
+
+    function stripChrome() {
+      for (const id of blockedIds) {
+        const node = document.getElementById(id);
+        if (node) node.remove();
+      }
+    }
+
+    stripChrome();
+    new MutationObserver(stripChrome).observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+    });
+
+    let rfb = null;
+    let reconnectTimer = null;
+
+    function connect() {
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      const previous = rfb;
+      rfb = null;
+      if (previous) {
+        try { previous.disconnect(); } catch (err) { /* already closed */ }
+      }
+      screen.replaceChildren();
+      stripChrome();
+
+      const client = new RFB(screen, socketUrl(), {
+        credentials: { password: password() },
+      });
+      rfb = client;
+      client.scaleViewport = query('scale', 'true') !== 'false';
+      client.resizeSession = query('resize', 'false') === 'true';
+      client.clipViewport = false;
+      client.focusOnClick = true;
+      client.viewOnly = query('view_only', 'false') === 'true';
+      client.background = '#1b2836';
+
+      let sentCredentials = false;
+      client.addEventListener('connect', () => {
+        screen.focus();
+        stripChrome();
+      });
+      client.addEventListener('credentialsrequired', () => {
+        const pass = password();
+        if (sentCredentials || !pass) return;
+        sentCredentials = true;
+        client.sendCredentials({ password: pass });
+      });
+      client.addEventListener('disconnect', () => {
+        if (rfb !== client) return;
+        rfb = null;
+        reconnectTimer = setTimeout(connect, 800);
+      });
+    }
+
+    connect();
+  </script>
+</body>
+</html>
